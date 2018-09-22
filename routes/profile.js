@@ -2,6 +2,9 @@ const express = require('express')
 const router = express.Router()
 const db = require('../services/db.js')
 const verifyToken = require('../services/token.js')
+// File upload
+const formidable = require('formidable')
+const AWS = require('aws-sdk')
 
 router.get('/me', verifyToken, (req, res) => {
   let sql = 'SELECT * FROM users WHERE email = ?'
@@ -44,8 +47,41 @@ router.post('/me', verifyToken, (req, res) => {
   })
 })
 
-router.post('/image', verifyToken, (req, res) => {
+//router.post('/image', verifyToken, (req, res) => {
+router.post('/image', (req, res) => {
+  let form = new formidable.IncomingForm()
+  form.parse(req)
+  form.on('fileBegin', (name, file) => {
+    file.path = __dirname + file.name;
+  })
+  form.on('file', (name, file) => {
+    console.log(file)
+    uploadToS3(file);
+  })
   res.status(200).send('Tudo correu bem')
 })
+
+function uploadToS3 (file) {
+  let s3bucket = new AWS.S3({
+    accessKeyId: process.env.IAM_USER_KEY,
+    secretAccessKey: process.env.IAM_USER_SECRET,
+    Bucket: process.env.BUCKET_NAME
+  })
+  s3bucket.createBucket(function () {
+    var params = {
+      Bucket: process.env.BUCKET_NAME,
+      Key: file.name,
+      Body: file
+    };
+    s3bucket.upload(params, function (err, data) {
+      if (err) {
+        console.log('error in callback');
+        console.log(err);
+      }
+      console.log('success');
+      console.log(data);
+    });
+  });
+}
 
 module.exports = router;
