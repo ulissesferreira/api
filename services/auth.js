@@ -73,8 +73,7 @@ class Auth {
   }
 
   async register(req, res) {
-    let sqlQuery = 'INSERT INTO users ',
-      response = {
+    let response = {
         code: 200,
         ok: 1
       },
@@ -86,8 +85,7 @@ class Auth {
     // generate keycode
     json.keycode = json.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(new RegExp(' ', 'g'), '.').toLowerCase()
 
-    let [partial, params] = sql.createSQLPlaceholderFromJSON(json)
-    sqlQuery += partial
+    let [sqlQuery, params] = sql.createSQLqueryFromJSON('INSERT', 'users', json)
     
     try {
       await this.database.query(sqlQuery, params)
