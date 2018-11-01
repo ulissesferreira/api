@@ -1,3 +1,5 @@
+const crypto = require('crypto')
+
 class Mentor {
 
   constructor(app) {
@@ -7,9 +9,9 @@ class Mentor {
     if(this.logger) this.logger.verbose('Mentor service loaded')
   }
 
-  async get(req, res) {
-    if(req.params.keycode === 'random') {
-      this.getRandom(req, res)
+  async get(req, res, next) {
+    if(req.params.keycode === 'random' || req.params.keycode === 'slots') {
+      next()
       return;
     }
 
@@ -56,6 +58,127 @@ class Mentor {
 
       if(err === 404) {
         response.code = err
+      }
+    }
+
+    res.status(response.code).json(response)
+  }
+
+  /**
+   * @description Returns mentor's time slots
+   * @param {Request} req 
+   * @param {Response} res 
+   */
+  async getTimeSlots(req, res) {
+    let response = {
+      ok: 1,
+      code: 200
+    }
+
+    try {
+      let startDate = req.query.start,
+        endDate = req.query.end,
+        sqlQuery = 'SELECT * FROM timeSlots WHERE mentorUID = ?'
+
+      /** 
+       * if startDate and endDate is not set,
+       *  return all future time slots
+       */
+      if(!startDate && !endDate) {
+        sqlQuery += ' AND start >= NOW()'
+      }
+      
+      /**
+       * set starting and ending date/time
+       */
+      if(startDate) sqlQuery += ` AND start >= TIMESTAMP("${startDate}")`
+      if(endDate) sqlQuery += ` AND start <= TIMESTAMP("${endDate}")`
+
+      let [slots] = await this.database.query(sqlQuery, [req.jwt.uid]) 
+      if(!slots.length) throw { APIerr: true, errorCode: 404, errorMessage: 'Slots not found' }
+      
+      response.slots = slots
+    } catch (err) {
+      response.ok = 0
+      response.code = 400
+
+      if(err.APIerr) {
+        response.code = err.errorCode
+        response.message = err.errorMessage
+      }
+    }
+    
+    res.status(response.code).json(response)
+  }
+
+  /**
+   * @description Updates and creates mentor's time slots
+   * @param {Request} req 
+   * @param {Response} res 
+   */
+  async updateTimeSlots(req, res) {
+    let deletedSlots = req.body.deleted,
+      updatedSlots = req.body.updated,
+      sqlQuery = '',
+      response = {
+        ok: 1,
+        code: 200
+      }
+    
+    // delete events
+    if(deletedSlots) {
+      sqlQuery = 'SELECT deleteSlot(?, ?)'
+      response.deleteOK = 1
+
+      for (let slotID of deletedSlots) {
+        try {
+          await this.database.query(sqlQuery, [slotID, req.jwt.uid])
+
+        } catch (err) {
+          response.ok = 0
+          response.code = 400
+          response.message = 'One or more time slots couldn\'t be deleted'
+          response.deleteOK = 0
+        }
+      }
+    }
+    
+    // try to update events
+    if(updatedSlots) {
+      sqlQuery = 'SELECT insertUpdateSlot(?, ?, ?, ?, ?)'
+      response.updateOK = 1
+
+      for (let slot of updatedSlots) {
+        try {
+          if(!slot.sid) slot.sid = crypto.randomBytes(20).toString('hex')
+
+          /** let's figure out if the slot is +1h
+           *  so we can divide it into multiple slots
+           */
+          let hourDiff = Math.floor(Math.abs((new Date(slot.end) - new Date(slot.start)) / 3.6e6))
+          if(hourDiff > 1) {
+            // iterator
+            let slotStart = new Date(slot.start)
+            while(hourDiff--) {
+              updatedSlots.push({
+                start: slotStart,
+                end: new Date(new Date(slotStart).setHours(new Date(slotStart).getHours() + 1)),
+                recurrency: slot.recurrency
+              })
+              
+              // next event starts at the end of the previous one
+              slotStart = new Date(new Date(slotStart).setHours(new Date(slotStart).getHours() + 1))
+            }
+            continue;
+          } else {
+            await this.database.query(sqlQuery, [slot.sid, req.jwt.uid, slot.start, slot.end, slot.recurrency])
+          }
+        } catch (err) {
+          response.ok = 0
+          response.code = 400
+          response.message = 'One or more time slots couldn\'t be updated'
+          response.updateOK = 0
+        }
       }
     }
 
