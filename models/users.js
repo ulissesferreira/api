@@ -14,5 +14,7 @@ exports.fields = [
   'github',
   'facebook',
   'dribbble',
+  'googleAccessToken',
+  'googleRefreshToken'
 ]
 
