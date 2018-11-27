@@ -1,7 +1,7 @@
 const router = require('express').Router()
 
 function setRouters(app) {
-  let services = app.get('logger')
+  let services = app.get('services')
 
   router.post('/login', (req, res) => {
     services.auth.login(req, res)  
@@ -14,7 +14,6 @@ function setRouters(app) {
   router.post('/forgotmypassword', (req, res) => {
     services.auth.resetPassword(req, res)
   })
-  
   
   router.post('/changemyemail', (req, res) => {
     services.auth.changeEmail(req, res)
